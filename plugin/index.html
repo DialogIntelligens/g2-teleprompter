@@ -1,0 +1,104 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>G2 Teleprompter Plugin</title>
+  <script src="https://unpkg.com/@evenrealities/even_hub_sdk@0.0.9/dist/index.umd.js"></script>
+</head>
+<body>
+<script>
+  // ── Config ────────────────────────────────────────────────────────────────
+  // Replace this with your actual Render URL once deployed
+  const SERVER_URL = 'wss://g2-teleprompter.onrender.com';
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let bridge   = null;
+  let ws       = null;
+  let currentText = 'Teleprompter ready.\nWaiting for a script...';
+  let containerReady = false;
+  let reconnectTimer = null;
+
+  // ── SDK init ──────────────────────────────────────────────────────────────
+  async function initGlasses() {
+    try {
+      bridge = await window.EvenHubSDK.waitForEvenAppBridge();
+
+      const container = new window.EvenHubSDK.TextContainerProperty({
+        xPosition    : 0,
+        yPosition    : 0,
+        width        : 576,
+        height       : 288,
+        borderWidth  : 0,
+        borderColor  : 5,
+        paddingLength: 6,
+        containerID  : 1,
+        containerName: 'teleprompter',
+        content      : currentText,
+        isEventCapture: 1
+      });
+
+      const result = await bridge.createStartUpPageContainer(1, [container]);
+      console.log('G2 container created, result:', result);
+      containerReady = true;
+    } catch (e) {
+      console.error('Glasses init failed:', e);
+    }
+  }
+
+  // ── Update glasses display ─────────────────────────────────────────────────
+  async function updateGlasses(text) {
+    if (!bridge || !containerReady) return;
+    currentText = text;
+    try {
+      await bridge.textContainerUpgrade(1, 'teleprompter', text, 0, text.length);
+    } catch (e) {
+      console.error('textContainerUpgrade failed:', e);
+    }
+  }
+
+  // ── WebSocket connection to server ─────────────────────────────────────────
+  function connectWS() {
+    if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+
+    console.log('Connecting to', SERVER_URL);
+    ws = new WebSocket(SERVER_URL);
+
+    ws.onopen = () => {
+      console.log('WS connected');
+      clearTimeout(reconnectTimer);
+      ws.send(JSON.stringify({ type: 'plugin-register' }));
+      updateGlasses('Connected.\nWaiting for a script...');
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'teleprompter' && msg.text) {
+          console.log('Script received:', msg.text.substring(0, 40));
+          updateGlasses(msg.text);
+        }
+      } catch (e) {
+        console.error('WS message parse error:', e);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log('WS disconnected — reconnecting in 5s');
+      updateGlasses('Disconnected.\nReconnecting...');
+      reconnectTimer = setTimeout(connectWS, 5000);
+    };
+
+    ws.onerror = (err) => {
+      console.error('WS error:', err);
+      ws.close();
+    };
+  }
+
+  // ── Start ─────────────────────────────────────────────────────────────────
+  (async () => {
+    await initGlasses();
+    connectWS();
+  })();
+</script>
+</body>
+</html>
