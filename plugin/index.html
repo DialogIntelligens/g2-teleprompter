@@ -45,38 +45,21 @@
 
   // ── Menus ─────────────────────────────────────────────────────────────────
   const MAIN_MENU = [
-    { label: '↩  Back to script',   action: 'back'       },
-    { label: '✓  Ready',            action: 'ready'      },
-    { label: '⏸  Need a moment',    action: 'moment'     },
-    { label: '✓  Done reading',     action: 'done'       },
-    { label: '📷  Camera on',        action: 'cam-on'     },
-    { label: '📷  Camera off',       action: 'cam-off'    },
-    { label: '✏  Custom message ›', action: 'custom-menu'},
-    { label: '✕  Exit app',         action: 'exit'       },
+    { label: '↩  Back to script', action: 'back'    },
+    { label: '✓  Ready',          action: 'ready'   },
+    { label: '📷  Camera on',      action: 'cam-on'  },
+    { label: '📷  Camera off',     action: 'cam-off' },
+    { label: '⏸  Need a moment',  action: 'moment'  },
+    { label: '✕  Exit app',       action: 'exit'    },
   ];
 
-  const CUSTOM_MENU = [
-    { label: '←  Back to menu',      action: 'back-menu'   },
-    { label: '🚨  Something is wrong!', action: 'wrong'     },
-    { label: '🔁  Can you repeat?',  action: 'repeat'      },
-    { label: '⏩  Speed up',          action: 'faster'      },
-    { label: '⏪  Slow down',         action: 'slower'      },
-    { label: '✋  Stand by',          action: 'standby'     },
-    { label: '👍  All good',          action: 'allgood'     },
-  ];
+  const CUSTOM_MENU = []; // unused — sub-menu removed for brevity
 
   const ACTION_MESSAGES = {
     'ready'  : '✓ Ready',
-    'moment' : '⏸ Need a moment',
-    'done'   : '✓ Done reading',
     'cam-on' : '📷 Camera on',
     'cam-off': '📷 Camera off',
-    'wrong'  : '🚨 Something is wrong!',
-    'repeat' : '🔁 Can you repeat?',
-    'faster' : '⏩ Speed up',
-    'slower' : '⏪ Slow down',
-    'standby': '✋ Stand by',
-    'allgood': '👍 All good',
+    'moment' : '⏸ Need a moment',
   };
 
   // ── Debug log ─────────────────────────────────────────────────────────────
