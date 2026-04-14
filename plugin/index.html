@@ -203,6 +203,15 @@
       log('Server connected ✓', 'ok');
       clearTimeout(reconnectTimer);
       ws.send(JSON.stringify({ type: 'plugin-register' }));
+      // Heartbeat — send a ping every 20s to keep the connection alive
+      const heartbeat = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }));
+        } else {
+          clearInterval(heartbeat);
+        }
+      }, 20000);
+      ws._heartbeat = heartbeat;
     };
 
     ws.onmessage = ({ data }) => {
@@ -223,6 +232,7 @@
     };
 
     ws.onclose = () => {
+      clearInterval(ws._heartbeat);
       log('Disconnected — retry in 5s', 'err');
       reconnectTimer = setTimeout(connectWS, 5000);
     };
