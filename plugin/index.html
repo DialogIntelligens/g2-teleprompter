@@ -38,6 +38,7 @@
 
   let pages       = [];
   let currentPage = 0;
+  let silentMode  = false;
 
   // Menu: 'none' | 'main' | 'custom'
   let menuLevel = 'none';
@@ -50,10 +51,7 @@
     { label: '📷  Camera on',      action: 'cam-on'  },
     { label: '📷  Camera off',     action: 'cam-off' },
     { label: '⏸  Need a moment',  action: 'moment'  },
-    { label: '✕  Exit app',       action: 'exit'    },
   ];
-
-  const CUSTOM_MENU = []; // unused — sub-menu removed for brevity
 
   const ACTION_MESSAGES = {
     'ready'  : '✓ Ready',
@@ -69,6 +67,13 @@
     el.className = type;
     el.textContent = new Date().toLocaleTimeString() + '  ' + msg;
     document.getElementById('log').prepend(el);
+  }
+
+  // ── Activity events → server ──────────────────────────────────────────────
+  function sendActivity(event, extra = {}) {
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'activity', event, ...extra }));
+    }
   }
 
   // ── Paging ────────────────────────────────────────────────────────────────
@@ -89,7 +94,7 @@
   // ── Display ───────────────────────────────────────────────────────────────
   async function setDisplay(content) {
     if (!bridge || !containerReady) return;
-    if (displayBusy) return;   // never send concurrent updates
+    if (displayBusy) return;
     displayBusy = true;
     try {
       await bridge.textContainerUpgrade(new TextContainerUpgrade({
@@ -114,6 +119,23 @@
     const indicator = pages.length > 1 ? `\n\n— ${currentPage + 1} / ${pages.length} —` : '';
     await setDisplay(pages[currentPage] + indicator);
     log(`Page ${currentPage + 1}/${pages.length}`, 'ok');
+    sendActivity('page-change', { page: currentPage + 1, total: pages.length });
+  }
+
+  // ── Silent mode ───────────────────────────────────────────────────────────
+  async function enableSilent() {
+    silentMode = true;
+    menuLevel  = 'none';
+    await setDisplay('·');
+    log('Silent mode ON', 'info');
+    sendActivity('silent-on');
+  }
+
+  async function disableSilent() {
+    silentMode = false;
+    log('Silent mode OFF', 'ok');
+    sendActivity('silent-off');
+    await showPage(currentPage);
   }
 
   // ── Menu rendering ────────────────────────────────────────────────────────
@@ -122,44 +144,43 @@
     items.forEach((item, i) => {
       lines.push((i === menuIndex ? '▶  ' : '    ') + item.label);
     });
-    lines.push('', '─────────────────', 'scroll · navigate    tap · select');
     return lines.join('\n');
   }
 
   async function openMenu(level) {
     menuLevel = level;
     menuIndex = 0;
-    const items = level === 'custom' ? CUSTOM_MENU : MAIN_MENU;
+    const items = level === 'custom' ? [] : MAIN_MENU;
     const title = level === 'custom' ? '━━━ CUSTOM ━━━' : '━━━ MENU ━━━';
     await setDisplay(renderMenu(items, title));
     log('Menu: ' + level);
+    sendActivity('menu-open');
   }
 
   async function scrollMenu(dir) {
-    const items = menuLevel === 'custom' ? CUSTOM_MENU : MAIN_MENU;
+    const items = menuLevel === 'custom' ? [] : MAIN_MENU;
     menuIndex = (menuIndex + dir + items.length) % items.length;
     const title = menuLevel === 'custom' ? '━━━ CUSTOM ━━━' : '━━━ MENU ━━━';
     await setDisplay(renderMenu(items, title));
   }
 
   async function confirmMenu() {
-    const items  = menuLevel === 'custom' ? CUSTOM_MENU : MAIN_MENU;
+    const items  = menuLevel === 'custom' ? [] : MAIN_MENU;
     const action = items[menuIndex].action;
 
     if (action === 'back') {
       menuLevel = 'none';
+      sendActivity('menu-close');
       await showPage(currentPage);
     } else if (action === 'back-menu') {
       await openMenu('main');
     } else if (action === 'custom-menu') {
       await openMenu('custom');
-    } else if (action === 'exit') {
-      log('Exiting…');
-      await bridge.shutDownPageContainer(1);   // mode 1 = native confirm dialog
     } else if (ACTION_MESSAGES[action]) {
       const text = ACTION_MESSAGES[action];
       sendResponse(text);
       menuLevel = 'none';
+      sendActivity('menu-close');
       await setDisplay(`Sent:\n${text}\n\nReturning to script…`);
       setTimeout(() => showPage(currentPage), 1500);
       log('Sent: ' + text, 'ok');
@@ -191,7 +212,9 @@
           pages = splitIntoPages(msg.text);
           currentPage = 0;
           menuLevel = 'none';
+          silentMode = false;
           log(`Script: ${pages.length} pages, ${msg.text.length} chars`);
+          sendActivity('script-loaded', { pages: pages.length, chars: msg.text.length });
           showPage(0);
         }
       } catch (e) {
@@ -207,7 +230,7 @@
     ws.onerror = () => { log('WS error', 'err'); ws.close(); };
   }
 
-  // ── Tap timing (G2 sends raw sysEvents with no type — we detect ourselves) ──
+  // ── Tap timing ────────────────────────────────────────────────────────────
   let tapCount = 0;
   let tapTimer = null;
   const DOUBLE_TAP_MS = 400;
@@ -218,30 +241,38 @@
     tapTimer = setTimeout(() => {
       const n = tapCount;
       tapCount = 0;
-      if (n >= 2) onDoubleTap();
-      else        onSingleTap();
+      if      (n >= 3) onTripleTap();
+      else if (n >= 2) onDoubleTap();
+      else             onSingleTap();
     }, DOUBLE_TAP_MS);
   }
 
   function onSingleTap() {
     log('single tap');
+    if (silentMode) return;           // ignore taps while silent (use triple tap to wake)
     if (menuLevel !== 'none') {
-      // In menu: single tap advances to next item (cycles)
       scrollMenu(+1);
     } else {
-      // In script: single tap opens menu
       openMenu('main');
     }
   }
 
   function onDoubleTap() {
     log('double tap');
+    if (silentMode) return;
     if (menuLevel !== 'none') {
-      // In menu: double tap confirms selection
       confirmMenu();
     } else {
-      // In script: double tap = next page (loops)
       showPage(currentPage + 1, true);
+    }
+  }
+
+  function onTripleTap() {
+    log('triple tap');
+    if (silentMode) {
+      disableSilent();
+    } else {
+      enableSilent();
     }
   }
 
@@ -255,6 +286,7 @@
         type === OsEventTypeList.SYSTEM_EXIT_EVENT ||
         type === OsEventTypeList.ABNORMAL_EXIT_EVENT) {
       log('App exiting (' + type + ')');
+      sendActivity('app-exit');
       return;
     }
 
@@ -264,7 +296,6 @@
                           type === OsEventTypeList.DOUBLE_CLICK_EVENT);
 
     if (isTouchEvent || isTypedClick) {
-      // If SDK gives us a typed double-click directly, honour it
       if (type === OsEventTypeList.DOUBLE_CLICK_EVENT) {
         onDoubleTap();
       } else {
@@ -273,11 +304,11 @@
       return;
     }
 
-    // Typed scroll events (may fire on some firmware versions)
+    // Typed scroll events
     if (type === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
-      menuLevel !== 'none' ? scrollMenu(+1) : showPage(currentPage + 1, false);
+      if (!silentMode) menuLevel !== 'none' ? scrollMenu(+1) : showPage(currentPage + 1, false);
     } else if (type === OsEventTypeList.SCROLL_TOP_EVENT) {
-      menuLevel !== 'none' ? scrollMenu(-1) : showPage(currentPage - 1, false);
+      if (!silentMode) menuLevel !== 'none' ? scrollMenu(-1) : showPage(currentPage - 1, false);
     }
   }
 
@@ -298,7 +329,7 @@
         paddingLength: 6,
         containerID  : 1,
         containerName: 'teleprompter',
-        content      : 'Teleprompter ready.\nWaiting for a script...\n\nTap · menu\nDouble-tap · next page',
+        content      : 'Teleprompter ready.\nWaiting for a script...\n\nTap · menu\nDouble-tap · next page\nTriple-tap · silent mode',
         isEventCapture: 1
       });
 
@@ -316,7 +347,6 @@
         bridge.onEvenHubEvent(handleEvent);
         log('Container ready ✓', 'ok');
       } else if (result === 3 && attempt < 3) {
-        // Out of memory — wait and retry
         log(`Out of memory, retrying in 2s… (attempt ${attempt})`, 'err');
         await new Promise(r => setTimeout(r, 2000));
         return initGlasses(attempt + 1);
