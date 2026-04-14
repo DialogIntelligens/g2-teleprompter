@@ -356,19 +356,21 @@
         yPosition    : 0,
         width        : 576,
         height       : 288,
-        borderWidth  : 0,
-        borderColor  : 5,
         paddingLength: 6,
         containerID  : 1,
         containerName: 'teleprompter',
-        content      : 'Teleprompter ready.\nWaiting for a script...\n\nTap · menu\nDouble-tap · next page\nTriple-tap · silent mode',
-        isEventCapture: 1
+        content      : 'Teleprompter ready.\nWaiting for a script...\n\nTap = menu\nDouble-tap = next page\nTriple-tap = silent'
       });
 
       const page = new CreateStartUpPageContainer({
         containerTotalNum: 1,
         textObject: [textContainer]
       });
+
+      // Wire up event handler FIRST so taps work even if container create fails
+      bridge.onEvenHubEvent(handleEvent);
+      log('Events wired ✓', 'ok');
+      sendActivity('debug', { event: 'events-wired' });
 
       log(`Creating container (attempt ${attempt})…`);
       const result = await bridge.createStartUpPageContainer(page);
@@ -377,15 +379,18 @@
       // result: 0=ok, 1=invalid, 2=oversize, 3=out-of-memory
       if (result === 0) {
         containerReady = true;
-        bridge.onEvenHubEvent(handleEvent);
         log('Container ready ✓', 'ok');
-        sendActivity('debug', { event: 'container-ready-events-wired' });
+        sendActivity('debug', { event: 'container-created' });
       } else if (result === 3 && attempt < 3) {
         log(`Out of memory, retrying in 2s… (attempt ${attempt})`, 'err');
         await new Promise(r => setTimeout(r, 2000));
         return initGlasses(attempt + 1);
       } else {
-        log(`Container failed: result=${result}`, 'err');
+        // Container create failed — but a container may still exist from a previous session.
+        // Mark ready anyway so textContainerUpgrade can try to update the existing container.
+        log(`Container result=${result} — assuming existing container from prior session`, 'err');
+        containerReady = true;
+        sendActivity('debug', { event: 'container-failed-fallback', result });
       }
     } catch (e) {
       log('Init failed: ' + e.message, 'err');
