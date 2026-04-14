@@ -227,8 +227,10 @@
     };
 
     ws.onmessage = ({ data }) => {
+      sendActivity('debug', { event: 'ws-msg-received', size: (data || '').length });
       try {
         const msg = JSON.parse(data);
+        sendActivity('debug', { event: 'ws-msg-parsed', msgType: msg.type });
         if (msg.type === 'teleprompter' && typeof msg.text === 'string') {
           pages = splitIntoPages(msg.text);
           currentPage = 0;
@@ -240,6 +242,7 @@
         }
       } catch (e) {
         log('WS parse error: ' + e.message, 'err');
+        sendActivity('debug', { event: 'ws-parse-error', err: e.message });
       }
     };
 
@@ -343,8 +346,10 @@
   async function initGlasses(attempt = 1) {
     try {
       log('Waiting for bridge…');
+      sendActivity('debug', { event: 'awaiting-bridge', attempt });
       bridge = await waitForEvenAppBridge();
       log('Bridge ready ✓', 'ok');
+      sendActivity('debug', { event: 'bridge-ready' });
 
       const textContainer = new TextContainerProperty({
         xPosition    : 0,
@@ -367,12 +372,14 @@
 
       log(`Creating container (attempt ${attempt})…`);
       const result = await bridge.createStartUpPageContainer(page);
+      sendActivity('debug', { event: 'container-result', result, attempt });
 
       // result: 0=ok, 1=invalid, 2=oversize, 3=out-of-memory
       if (result === 0) {
         containerReady = true;
         bridge.onEvenHubEvent(handleEvent);
         log('Container ready ✓', 'ok');
+        sendActivity('debug', { event: 'container-ready-events-wired' });
       } else if (result === 3 && attempt < 3) {
         log(`Out of memory, retrying in 2s… (attempt ${attempt})`, 'err');
         await new Promise(r => setTimeout(r, 2000));
@@ -382,6 +389,7 @@
       }
     } catch (e) {
       log('Init failed: ' + e.message, 'err');
+      sendActivity('debug', { event: 'init-exception', err: e.message });
     }
   }
 
