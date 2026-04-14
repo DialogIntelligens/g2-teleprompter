@@ -300,8 +300,13 @@
 
   // ── Event handling ────────────────────────────────────────────────────────
   function handleEvent(event) {
-    const type   = event?.textEvent?.eventType ?? event?.sysEvent?.eventType;
-    const source = event?.sysEvent?.eventSource;
+    // Accept both camelCase field names the SDK might emit
+    const textEvt = event?.textEvt ?? event?.textEvent;
+    const sysEvt  = event?.sysEvt  ?? event?.sysEvent;
+    const type    = textEvt?.eventType ?? sysEvt?.eventType;
+    const source  = sysEvt?.src ?? sysEvt?.eventSource;
+
+    log('EVT: ' + JSON.stringify(event));
 
     // Lifecycle events
     if (type === OsEventTypeList.FOREGROUND_EXIT_EVENT ||
@@ -312,7 +317,7 @@
       return;
     }
 
-    // G2 sends raw touch as sysEvent with source but no type
+    // G2 sends raw touch as sysEvt with src but no eventType
     const isTouchEvent = (source !== undefined && source !== 0);
     const isTypedClick = (type === OsEventTypeList.CLICK_EVENT ||
                           type === OsEventTypeList.DOUBLE_CLICK_EVENT);
