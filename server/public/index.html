@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -9,14 +9,15 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: #0f0f0f; color: #f0f0f0;
-      min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      padding: 24px;
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; padding: 24px; gap: 20px;
     }
     .card {
       background: #1a1a1a; border: 1px solid #2e2e2e; border-radius: 16px;
       padding: 36px 32px; width: 100%; max-width: 560px;
     }
     h1 { font-size: 1.5rem; margin-bottom: 4px; }
+    h2 { font-size: 1.1rem; margin-bottom: 4px; }
     .subtitle { color: #888; font-size: 0.9rem; margin-bottom: 28px; }
     label { display: block; font-size: 0.85rem; color: #aaa; margin-bottom: 6px; }
     textarea, input[type="password"] {
@@ -38,12 +39,27 @@
       margin-top: 16px; padding: 12px 14px; border-radius: 10px;
       font-size: 0.9rem; display: none;
     }
-    .status.ok    { background: #052e16; color: #4ade80; border: 1px solid #166534; }
-    .status.error { background: #2d0a0a; color: #f87171; border: 1px solid #7f1d1d; }
+    .status.ok    { background: #052e16; color: #4ade80; border: 1px solid #166534; display: block; }
+    .status.error { background: #2d0a0a; color: #f87171; border: 1px solid #7f1d1d; display: block; }
     .chars { font-size: 0.8rem; color: #555; text-align: right; margin-top: -12px; margin-bottom: 16px; }
+
+    .responses-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; transition: background .3s; }
+    .dot.live { background: #4ade80; }
+    .response-list { display: flex; flex-direction: column; gap: 8px; min-height: 48px; }
+    .response-item {
+      display: flex; align-items: center; justify-content: space-between;
+      background: #111; border: 1px solid #2e2e2e; border-radius: 8px; padding: 10px 14px;
+    }
+    .response-item .text { font-weight: 500; font-size: 0.95rem; }
+    .response-item .time { font-size: 0.75rem; color: #555; white-space: nowrap; margin-left: 12px; }
+    .empty { color: #444; font-size: 0.9rem; text-align: center; padding: 12px 0; }
   </style>
 </head>
 <body>
+
 <div class="card">
   <h1>🎬 G2 Teleprompter</h1>
   <p class="subtitle">Type a script below — it will appear on the glasses instantly.</p>
@@ -59,6 +75,19 @@
   <div class="status" id="status"></div>
 </div>
 
+<div class="card">
+  <div class="responses-header">
+    <div>
+      <h2>📨 Messages from glasses</h2>
+      <p class="subtitle" style="margin-bottom:0">Sent by the wearer via the ring menu</p>
+    </div>
+    <div class="dot" id="dot"></div>
+  </div>
+  <div class="response-list" id="responseList">
+    <div class="empty">No messages yet</div>
+  </div>
+</div>
+
 <script>
   const textarea = document.getElementById('script');
   textarea.addEventListener('input', () => {
@@ -69,30 +98,24 @@
     const text   = textarea.value.trim();
     const secret = document.getElementById('secret').value;
     const btn    = document.getElementById('sendBtn');
-    const status = document.getElementById('status');
 
     if (!text) { showStatus('Please enter some text first.', 'error'); return; }
-
-    btn.disabled    = true;
-    btn.textContent = 'Sending…';
-    status.style.display = 'none';
+    btn.disabled = true; btn.textContent = 'Sending…';
+    document.getElementById('status').className = 'status';
 
     try {
       const body = { text };
       if (secret) body.secret = secret;
-
       const res  = await fetch('/send', {
-        method : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body   : JSON.stringify(body)
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
       });
       const data = await res.json();
-
       if (res.ok) {
         showStatus(
           data.deliveredTo > 0
             ? `✓ Delivered to ${data.deliveredTo} glasses!`
-            : '⚠ Sent, but no glasses are currently connected.',
+            : '⚠ Sent, but no glasses are connected.',
           data.deliveredTo > 0 ? 'ok' : 'error'
         );
       } else {
@@ -101,17 +124,45 @@
     } catch (e) {
       showStatus('Network error — is the server reachable?', 'error');
     } finally {
-      btn.disabled    = false;
-      btn.textContent = 'Send to Glasses';
+      btn.disabled = false; btn.textContent = 'Send to Glasses';
     }
   }
 
   function showStatus(msg, type) {
     const el = document.getElementById('status');
-    el.textContent     = msg;
-    el.className       = `status ${type}`;
-    el.style.display   = 'block';
+    el.textContent = msg; el.className = `status ${type}`;
   }
+
+  function formatTime(iso) {
+    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  async function pollResponses() {
+    const dot = document.getElementById('dot');
+    try {
+      const res  = await fetch('/responses');
+      const data = await res.json();
+      dot.classList.add('live');
+      setTimeout(() => dot.classList.remove('live'), 400);
+      const list = document.getElementById('responseList');
+      if (data.length === 0) {
+        list.innerHTML = '<div class="empty">No messages yet</div>';
+      } else {
+        list.innerHTML = data.map(r => `
+          <div class="response-item">
+            <span class="text">${escapeHtml(r.text)}</span>
+            <span class="time">${formatTime(r.receivedAt)}</span>
+          </div>`).join('');
+      }
+    } catch (e) { /* keep old data if server unreachable */ }
+  }
+
+  pollResponses();
+  setInterval(pollResponses, 3000);
 </script>
 </body>
 </html>

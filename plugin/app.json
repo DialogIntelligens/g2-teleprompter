@@ -1,16 +1,16 @@
-﻿{
-  "package_id"      : "com.dialogintelligens.teleprompter",
-  "edition"         : "202601",
-  "name"            : "Teleprompter",
-  "version"         : "1.0.0",
-  "min_app_version" : "2.0.0",
-  "min_sdk_version" : "0.0.9",
-  "entrypoint"      : "index.html",
-  "permissions"     : [
+{
+  "package_id": "com.dialogintelligens.teleprompter",
+  "edition": "202601",
+  "name": "Teleprompter",
+  "version": "1.0.0",
+  "min_app_version": "2.0.0",
+  "min_sdk_version": "0.0.9",
+  "entrypoint": "index.html",
+  "permissions": [
     {
-      "name"     : "network",
-      "desc"     : "Connects to the teleprompter server to receive scripts in real time.",
-      "whitelist": []
+      "name": "network",
+      "desc": "Connects to the teleprompter server to receive scripts in real time.",
+      "whitelist": ["*"]
     }
   ],
   "supported_languages": ["en"]
